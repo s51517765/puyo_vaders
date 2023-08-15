@@ -3,7 +3,7 @@
 #include <M5Stack.h> //0.3.9
 #include <stdbool.h>
 #define BLOCKSIZE 3
-#define STEP_PERIOD 5 // 画面更新周期
+#define STEP_PERIOD 10 // 画面更新周期
 #define ALIEN_SPEED 2
 #define LEFT -1
 #define RIGHT 1
@@ -18,7 +18,7 @@ uint32_t counterLcdRefresh = 0;
 int32_t player_x = X_OFFSET_PIXEL;
 int32_t player_y = 216;
 uint8_t puyoDirection = 0;
-int8_t puyoOffset[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}; // x,y
+int8_t puyoOffset[4][2] = {{1, 0}, {0, -1}, {-1, 0}, {0, -1}}; // x,y //[1]下向きを反転
 
 char alienImg[8][11] = {{0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0},
                         {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},
@@ -233,7 +233,7 @@ void checkCanErase(uint8_t y, uint8_t x, uint8_t color)
         {
             if (sameColor[i][j])
             {
-                printf("(%d, %d) ", j, i); // (x, y) 形式で座標を表示
+                // printf("(%d, %d) ", j, i); // (x, y) 形式で座標を表示
                 count += 1;
             }
         }
@@ -265,56 +265,102 @@ void move_player(int32_t direction)
     printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
 }
 
+void rotate(int8_t direction)
+{
+    puyoDirection = (puyoDirection + direction) % 4;
+    if (puyoDirection == 1) // 下向きの時、上向きにして入れ替える
+    {
+        uint16_t tmp = nextColor[0];
+        nextColor[0] = nextColor[1];
+        nextColor[1] = tmp;
+    }
+}
+
 int32_t shot_speed = 10;
 int32_t shot_posi_y = player_y;
 int8_t isShooting[2] = {0};
+
+enum state
+{
+    WAITING = 0,
+    SHOOTING,
+    PRINTMAP,
+    CHECKERASE,
+    END
+};
 void shot()
 {
-    if (isShooting[0] == 0 && isShooting[1] == 0)
+    if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+    {
         return;
+    }
 
     // 当たり判定
+    uint8_t puyo_xy[2][2] = {{0, 0}, {0, 0}}; // y,x //新しく設置された場所を一時保存
     uint8_t x = (player_x - X_OFFSET_PIXEL) / ((BLOCKSIZE * ALIEN_IMG_SIZE_X));
-
-    for (int y = 0; y < PLAYAREA_MAP_SIZE_Y; y++)
+    int y;
+    for (y = 0; y < PLAYAREA_MAP_SIZE_Y; y++)
     {
-        if (abs(-shot_posi_y + alien_posi_y - BLOCKSIZE * ALIEN_IMG_SIZE_Y * y) < BLOCKSIZE * ALIEN_IMG_SIZE_Y * 3)
+        if (puyoDirection % 2 == 0) // 横向き
         {
-            if (playAreaMap[y][x] != BLANK && isShooting[1]) // Blankでないとき
+            if (playAreaMap[y][x] != BLANK && isShooting[1] == SHOOTING && y - 1 >= 0) // Blankでないとき
             {
-                isShooting[1] = 0;
-                shot_posi_y = player_y;
-                if (y - 1 >= 0)
-                {
-                    playAreaMap[y - 1][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
-                    checkCanErase(y - 1, x, currentColor[0]);
-                }
+                isShooting[1] = PRINTMAP;
+                playAreaMap[y - 1][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                puyo_xy[0][0] = y - 1;
+                puyo_xy[0][1] = x;
+            }
+            if (playAreaMap[y + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] != BLANK && isShooting[0] == SHOOTING && y - 1 >= 0)
+            {
+                isShooting[0] = PRINTMAP;
+                playAreaMap[y - 1 + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
+                puyo_xy[1][0] = y - 1;
+                puyo_xy[1][1] = x + puyoOffset[puyoDirection][0];
             }
         }
-
-        if (abs(-shot_posi_y + alien_posi_y - BLOCKSIZE * ALIEN_IMG_SIZE_Y * y) < BLOCKSIZE * ALIEN_IMG_SIZE_Y * 3)
+        else // 縦向き
         {
-            if (playAreaMap[y + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] != BLANK && isShooting[0])
+            if (playAreaMap[y][x] != BLANK && isShooting[1] == SHOOTING && y - 1 >= 0) // Blankでないとき
             {
-                isShooting[0] = 0;
-                if (y - 1 >= 0)
-                {
-                    playAreaMap[y - 1 + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
-                    checkCanErase(y - 1, x + puyoOffset[puyoDirection][0], currentColor[1]);
-                }
+                isShooting[0] = PRINTMAP;
+                isShooting[1] = PRINTMAP;
+                playAreaMap[y - 1][x] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
+                playAreaMap[y - 2][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                puyo_xy[0][0] = y - 2;
+                puyo_xy[0][1] = x;
+                puyo_xy[1][0] = y - 1;
+                puyo_xy[1][1] = x;
+                break;
             }
         }
     }
 
+    if (isShooting[0] == PRINTMAP && isShooting[1] == PRINTMAP)
+    {
+        isShooting[0] = CHECKERASE;
+        isShooting[1] = CHECKERASE;
+        clearAlian();
+        printMap();
+    }
+    if (isShooting[0] == CHECKERASE && isShooting[1] == CHECKERASE)
+    {
+        checkCanErase(puyo_xy[0][0], puyo_xy[0][1], currentColor[0]);
+        checkCanErase(puyo_xy[1][0], puyo_xy[1][1], currentColor[1]);
+
+        isShooting[0] = END;
+        isShooting[1] = END;
+        rotate(RIGHT);
+    }
+
     printPuyo(player_x, shot_posi_y, BLACK);
     printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, shot_posi_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
-    shot_posi_y -= shot_speed;
-    printPuyo(player_x, shot_posi_y, colors[currentColor[0]]);
-    printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, shot_posi_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[currentColor[1]]);
+    // shot_posi_y -= shot_speed;
+    // printPuyo(player_x, shot_posi_y, colors[currentColor[0]]);
+    // printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, shot_posi_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[currentColor[1]]);
     if (shot_posi_y < 0)
     {
-        isShooting[0] = 0;
-        isShooting[1] = 0;
+        isShooting[0] = WAITING;
+        isShooting[1] = WAITING;
         shot_posi_y = player_y;
     }
 }
@@ -344,10 +390,18 @@ void loop()
         {
             clearAlian();
             printMap();
+            if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+            {
+                printPuyo(player_x, player_y, colors[nextColor[0]]);
+                printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+            }
         }
         shot();
-        printPuyo(player_x, player_y, colors[nextColor[0]]);
-        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+        if (isShooting[0] == END && isShooting[1] == END)
+        {
+            isShooting[0] = WAITING;
+            isShooting[1] = WAITING;
+        }
     }
 
     M5.update(); // ボタンを読み取る
@@ -365,10 +419,11 @@ void loop()
 
     if (M5.BtnB.wasReleased() || M5.BtnB.pressedFor(1000, 200))
     {
-        if (isShooting[0] == 0 && isShooting[1] == 0)
+        if (isShooting[0] == WAITING && isShooting[1] == WAITING)
         {
-            isShooting[0] = 1;
-            isShooting[1] = 1;
+            isShooting[0] = SHOOTING;
+            isShooting[1] = SHOOTING;
+
             for (uint8_t i = 0; i < 2; i++)
             {
                 currentColor[i] = nextColor[i];
