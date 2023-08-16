@@ -11,6 +11,8 @@
 #define INITIAL 0x08
 #define BLANK 0x09
 #define X_OFFSET_PIXEL 12
+#define THRESH 4
+#define EVAPORATION_THRESH 8
 // #define printf(...)
 
 uint32_t pre = 0;
@@ -62,16 +64,18 @@ uint8_t playAreaMap[11][9] = {
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-2
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-1
     {8, 9, 8, 8, 9, 9, 8, 8, 8},  // 0
-    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 1
-    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 2
-    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 3
-    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 4
-    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 5
-    {8, 8, 8, 8, 8, 8, 8, 8, 8}}; // 6
+    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 1
+    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 2
+    {9, 9, 9, 9, 9, 9, 9, 8, 8},  // 3
+    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 4
+    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 5
+    {8, 8, 8, 8, 8, 8, 9, 8, 8}}; // 6
 const uint8_t PLAYAREA_MAP_SIZE_X = sizeof(playAreaMap[0]) / sizeof(playAreaMap[0][0]);
 const uint8_t PLAYAREA_MAP_SIZE_Y = sizeof(playAreaMap) / sizeof(playAreaMap[0]);
 
 uint32_t alien_posi_y = BLOCKSIZE * ALIEN_IMG_SIZE_Y * 6;
+
+bool isCheckeEvapo[PLAYAREA_MAP_SIZE_Y][PLAYAREA_MAP_SIZE_X] = {false};
 
 void printPlayAreaMap()
 {
@@ -79,7 +83,7 @@ void printPlayAreaMap()
     {
         for (int j = 0; j < PLAYAREA_MAP_SIZE_X; j++)
         {
-            printf("%02X,", playAreaMap[i][j]);
+            printf("%02X,", playAreaMap[PLAYAREA_MAP_SIZE_Y - i][j]);
         }
         printf("\n");
     }
@@ -88,6 +92,10 @@ void printPlayAreaMap()
 uint8_t choiseRandColor()
 {
     return rand() % (sizeof(colors) / sizeof(colors[0]) - 1) + 1;
+}
+uint8_t rand_i(uint8_t s, uint8_t e)
+{
+    return rand() % (e - s) + s;
 }
 
 void initRand(void)
@@ -181,9 +189,9 @@ void clearAlian()
     M5.Lcd.fillRect(X_OFFSET_PIXEL, 0, BLOCKSIZE * ALIEN_IMG_SIZE_X * PLAYAREA_MAP_SIZE_X, BLOCKSIZE * ALIEN_IMG_SIZE_Y * (PLAYAREA_MAP_SIZE_Y), BLACK); // x-pos,y-pos,x-size,y-size,color /
 }
 
-// 上下左右のセルを探索して同じ数字のセルを抽出する
 void findAdjacentCells(uint8_t x, uint8_t y, bool sameColor[PLAYAREA_MAP_SIZE_Y][PLAYAREA_MAP_SIZE_X], uint8_t color)
 {
+    // 上下左右のセルを探索して同じ数字のセルを抽出する
     if (color >= 0x10)
         color = color >> PUYO_COLOR_OFFSET;
 
@@ -241,7 +249,7 @@ void checkCanErase(uint8_t y, uint8_t x, uint8_t color)
     printf("\n");
 
     printPlayAreaMap();
-    if (count >= 4)
+    if (count >= THRESH) // 閾値以上同じ色がつながると消える
     {
         for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
         {
@@ -256,6 +264,75 @@ void checkCanErase(uint8_t y, uint8_t x, uint8_t color)
     }
 }
 
+void findAdjacentCells2(uint8_t x, uint8_t y, bool sameColor[PLAYAREA_MAP_SIZE_Y][PLAYAREA_MAP_SIZE_X])
+{
+    // 上下左右のセルを探索して空白でないセルを抽出する
+    if (x < 0 || x >= PLAYAREA_MAP_SIZE_X || y < 0 || y >= PLAYAREA_MAP_SIZE_Y || sameColor[y][x])
+    {
+        // 範囲外のセルは探索しない
+        return;
+    }
+    if (playAreaMap[y][x] != BLANK)
+    {
+        sameColor[y][x] = true;
+        isCheckeEvapo[y][x] = true;
+
+        // 上下左右のセルを探索
+        findAdjacentCells2(x - 1, y, sameColor); // 左
+        findAdjacentCells2(x + 1, y, sameColor); // 右
+        findAdjacentCells2(x, y - 1, sameColor); // 上
+        findAdjacentCells2(x, y + 1, sameColor); // 下
+    }
+    else
+    {
+        return;
+    }
+}
+
+void checkEvaporation(uint8_t y, uint8_t x)
+{
+    // 座標が範囲外の場合は処理しない
+    if (x < 0 || x >= PLAYAREA_MAP_SIZE_X || y < 0 || y >= PLAYAREA_MAP_SIZE_Y)
+    {
+        return;
+    }
+
+    // 探索したセルを記録する配列を初期化
+    bool sameColor[PLAYAREA_MAP_SIZE_Y][PLAYAREA_MAP_SIZE_X] = {false};
+
+    // 特定のセルから探索を開始
+    if (!sameColor[y][x])
+    {
+        findAdjacentCells2(x, y, sameColor);
+    }
+
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
+    {
+        for (uint8_t j = 0; j < PLAYAREA_MAP_SIZE_X; j++)
+        {
+            if (sameColor[i][j])
+            {
+                count += 1;
+            }
+        }
+    }
+    printf("Count = %d\n", count);
+
+    if (count <= EVAPORATION_THRESH) // 閾値以下の小さな塊は蒸発する
+    {
+        for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
+        {
+            for (uint8_t j = 0; j < PLAYAREA_MAP_SIZE_X; j++)
+            {
+                if (sameColor[i][j])
+                {
+                    playAreaMap[i][j] = BLANK;
+                }
+            }
+        }
+    }
+}
 void move_player(int32_t direction)
 {
     printPuyo(player_x, player_y, BLACK);
@@ -276,7 +353,7 @@ void rotate(int8_t direction)
     }
 }
 
-int32_t shot_speed = 10;
+// int32_t shot_speed = 10;
 int32_t shot_posi_y = player_y;
 int8_t isShooting[2] = {0};
 
@@ -380,9 +457,34 @@ void setup()
     nextColor[0] = choiseRandColor();
     nextColor[1] = choiseRandColor();
 }
+uint8_t check_y = 0;
+uint8_t check_x = 0;
 
+void funcCheckEvaporation(uint8_t *y, uint8_t *x)
+{
+    if (!isCheckeEvapo[*y][*x])
+    {
+        checkEvaporation(check_y, check_x);
+        isCheckeEvapo[*y][*x] = true;
+    }
+    else
+    {
+        *x += 1;
+        if (*x == PLAYAREA_MAP_SIZE_X)
+        {
+            *x = 0;
+            *y += 1;
+        }
+        if (*y == PLAYAREA_MAP_SIZE_Y)
+        {
+            *y = 0;
+            memset(isCheckeEvapo, false, sizeof(isCheckeEvapo));
+        }
+    }
+}
 void loop()
 {
+
     if (micros() - pre > STEP_PERIOD * 1000)
     {
         pre = micros();
@@ -402,18 +504,13 @@ void loop()
             isShooting[0] = WAITING;
             isShooting[1] = WAITING;
         }
+        funcCheckEvaporation(&check_y, &check_x);
     }
 
     M5.update(); // ボタンを読み取る
     // Button define
     if (M5.BtnA.wasReleased() || M5.BtnA.pressedFor(1000, 200))
     {
-        // A + C 同時押し
-        if (M5.BtnC.wasReleased() || M5.BtnC.pressedFor(1000, 200))
-        {
-            // Pause
-            delay(12000);
-        }
         move_player(LEFT);
     }
 
