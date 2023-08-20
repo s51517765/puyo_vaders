@@ -7,6 +7,8 @@
 #define ALIEN_SPEED 2
 #define LEFT -1
 #define RIGHT 1
+#define PIN_CW_ROTATE 2
+#define PIN_CCW_ROTATE 5
 #define PUYO_COLOR_OFFSET 4
 #define INITIAL 0x08
 #define BLANK 0x09
@@ -20,7 +22,22 @@ uint32_t counterLcdRefresh = 0;
 int32_t player_x = X_OFFSET_PIXEL;
 int32_t player_y = 216;
 uint8_t puyoDirection = 0;
-int8_t puyoOffset[4][2] = {{1, 0}, {0, -1}, {-1, 0}, {0, -1}}; // x,y //[1]下向きを反転
+int8_t puyoOffset[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}; // x,y
+int32_t shot_posi_y = player_y;
+int8_t isShooting[2] = {0};
+uint16_t currentColor[2];
+uint16_t nextColor[2];
+uint8_t check_y = 0;
+uint8_t check_x = 0;
+
+enum state
+{
+    WAITING = 0,
+    SHOOTING,
+    PRINTMAP,
+    CHECKERASE,
+    END
+};
 
 char alienImg[8][11] = {{0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0},
                         {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},
@@ -53,9 +70,6 @@ uint16_t colors[] = {
     CYAN,
     // RED
 };
-
-uint16_t currentColor[2];
-uint16_t nextColor[2];
 
 uint8_t playAreaMap[11][9] = {
     // 0x01 ~ 0x05:Alien  0x10 ~ x50:Puyo  0x08:Initial  0x09:Blank
@@ -317,7 +331,7 @@ void checkEvaporation(uint8_t y, uint8_t x)
             }
         }
     }
-    printf("Count = %d\n", count);
+    // printf("Count = %d\n", count);
 
     if (count <= EVAPORATION_THRESH) // 閾値以下の小さな塊は蒸発する
     {
@@ -344,27 +358,10 @@ void move_player(int32_t direction)
 
 void rotate(int8_t direction)
 {
-    puyoDirection = (puyoDirection + direction) % 4;
-    if (puyoDirection == 1) // 下向きの時、上向きにして入れ替える
-    {
-        uint16_t tmp = nextColor[0];
-        nextColor[0] = nextColor[1];
-        nextColor[1] = tmp;
-    }
+    puyoDirection = (puyoDirection + direction + 4) % 4;
+    printf("CCW %d %d\n", puyoDirection, direction);
 }
 
-// int32_t shot_speed = 10;
-int32_t shot_posi_y = player_y;
-int8_t isShooting[2] = {0};
-
-enum state
-{
-    WAITING = 0,
-    SHOOTING,
-    PRINTMAP,
-    CHECKERASE,
-    END
-};
 void shot()
 {
     if (isShooting[0] == WAITING && isShooting[1] == WAITING)
@@ -401,8 +398,16 @@ void shot()
             {
                 isShooting[0] = PRINTMAP;
                 isShooting[1] = PRINTMAP;
-                playAreaMap[y - 1][x] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
-                playAreaMap[y - 2][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                if (puyoDirection == 3)
+                {
+                    playAreaMap[y - 1][x] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
+                    playAreaMap[y - 2][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                }
+                else
+                {
+                    playAreaMap[y - 2][x] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
+                    playAreaMap[y - 1][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                }
                 puyo_xy[0][0] = y - 2;
                 puyo_xy[0][1] = x;
                 puyo_xy[1][0] = y - 1;
@@ -450,6 +455,8 @@ void setup()
     M5.Power.begin();
     initRand();
     M5.Lcd.setCursor(100, 100);
+    pinMode(PIN_CCW_ROTATE, INPUT_PULLUP);
+    pinMode(PIN_CW_ROTATE, INPUT_PULLUP);
     initStage();
     printMap();
     currentColor[0] = choiseRandColor();
@@ -457,8 +464,6 @@ void setup()
     nextColor[0] = choiseRandColor();
     nextColor[1] = choiseRandColor();
 }
-uint8_t check_y = 0;
-uint8_t check_x = 0;
 
 void funcCheckEvaporation(uint8_t *y, uint8_t *x)
 {
@@ -484,7 +489,6 @@ void funcCheckEvaporation(uint8_t *y, uint8_t *x)
 }
 void loop()
 {
-
     if (micros() - pre > STEP_PERIOD * 1000)
     {
         pre = micros();
@@ -492,19 +496,21 @@ void loop()
         {
             clearAlian();
             printMap();
-            if (isShooting[0] == WAITING && isShooting[1] == WAITING)
-            {
-                printPuyo(player_x, player_y, colors[nextColor[0]]);
-                printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
-            }
         }
         shot();
         if (isShooting[0] == END && isShooting[1] == END)
         {
             isShooting[0] = WAITING;
             isShooting[1] = WAITING;
+            puyoDirection = 0;
         }
         funcCheckEvaporation(&check_y, &check_x);
+    }
+
+    if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+    {
+        printPuyo(player_x, player_y, colors[nextColor[0]]);
+        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
     }
 
     M5.update(); // ボタンを読み取る
@@ -532,5 +538,32 @@ void loop()
     if (M5.BtnC.wasReleased() || M5.BtnC.pressedFor(1000, 200))
     {
         move_player(RIGHT);
+    }
+
+    if (digitalRead(PIN_CCW_ROTATE) == LOW)
+    {
+        printPuyo(player_x, player_y, BLACK);
+        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
+
+        rotate(LEFT);
+        printPuyo(player_x, player_y, colors[nextColor[0]]);
+        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+
+        while (digitalRead(PIN_CCW_ROTATE) == LOW)
+        {
+        }
+    }
+    if (digitalRead(PIN_CW_ROTATE) == LOW)
+    {
+        printPuyo(player_x, player_y, BLACK);
+        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
+
+        rotate(RIGHT);
+        printPuyo(player_x, player_y, colors[nextColor[0]]);
+        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+
+        while (digitalRead(PIN_CW_ROTATE) == LOW)
+        {
+        }
     }
 }
