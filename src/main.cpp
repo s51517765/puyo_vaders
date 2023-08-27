@@ -29,6 +29,11 @@ uint16_t currentColor[2];
 uint16_t nextColor[2];
 uint8_t check_y = 0;
 uint8_t check_x = 0;
+bool unbeatable = false;
+uint16_t score = 0;
+uint8_t counter_y;
+uint8_t counter_x;
+uint32_t counterColor;
 
 enum state
 {
@@ -38,6 +43,7 @@ enum state
     CHECKERASE,
     END
 };
+uint8_t counterState = WAITING;
 
 char alienImg[8][11] = {{0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0},
                         {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0},
@@ -61,14 +67,14 @@ char puyoImg[8][11] = {{0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0},
 const int PUYO_IMG_SIZE_X = sizeof(puyoImg[0]) / sizeof(puyoImg[0][0]);
 const int PUYO_IMG_SIZE_Y = sizeof(puyoImg) / sizeof(puyoImg[0]);
 
-uint16_t colors[] = {
+uint32_t colors[] = {
     BLACK, // Blank
     WHITE,
     YELLOW,
     MAGENTA,
     GREEN,
-    CYAN,
-    // RED
+    // CYAN,
+    //  RED
 };
 
 uint8_t playAreaMap[11][9] = {
@@ -77,13 +83,13 @@ uint8_t playAreaMap[11][9] = {
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-3
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-2
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-1
-    {8, 9, 8, 8, 9, 9, 8, 8, 8},  // 0
-    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 1
-    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 2
-    {9, 9, 9, 9, 9, 9, 9, 8, 8},  // 3
-    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 4
-    {8, 8, 8, 8, 8, 8, 9, 8, 8},  // 5
-    {8, 8, 8, 8, 8, 8, 9, 8, 8}}; // 6
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 0
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 1
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 2
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 3
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 4
+    {8, 8, 8, 8, 8, 8, 8, 8, 8},  // 5
+    {8, 8, 8, 8, 8, 8, 8, 8, 8}}; // 6
 const uint8_t PLAYAREA_MAP_SIZE_X = sizeof(playAreaMap[0]) / sizeof(playAreaMap[0][0]);
 const uint8_t PLAYAREA_MAP_SIZE_Y = sizeof(playAreaMap) / sizeof(playAreaMap[0]);
 
@@ -275,6 +281,7 @@ void checkCanErase(uint8_t y, uint8_t x, uint8_t color)
                 }
             }
         }
+        score += pow(2, count);
     }
 }
 
@@ -331,7 +338,6 @@ void checkEvaporation(uint8_t y, uint8_t x)
             }
         }
     }
-    // printf("Count = %d\n", count);
 
     if (count <= EVAPORATION_THRESH) // 閾値以下の小さな塊は蒸発する
     {
@@ -345,6 +351,7 @@ void checkEvaporation(uint8_t y, uint8_t x)
                 }
             }
         }
+        score += pow(2, count);
     }
 }
 void move_player(int32_t direction)
@@ -366,6 +373,8 @@ void shot()
 {
     if (isShooting[0] == WAITING && isShooting[1] == WAITING)
     {
+        // shotを打ち終わった瞬間までは無敵（プレイヤーにとって制御不能なため）
+        unbeatable = true;
         return;
     }
 
@@ -431,7 +440,8 @@ void shot()
 
         isShooting[0] = END;
         isShooting[1] = END;
-        rotate(RIGHT);
+        unbeatable = true;
+        //        rotate(RIGHT);
     }
 
     printPuyo(player_x, shot_posi_y, BLACK);
@@ -445,24 +455,6 @@ void shot()
         isShooting[1] = WAITING;
         shot_posi_y = player_y;
     }
-}
-
-void setup()
-{
-    Serial.begin(115200); // 115200bps
-
-    M5.begin(true, false, true);
-    M5.Power.begin();
-    initRand();
-    M5.Lcd.setCursor(100, 100);
-    pinMode(PIN_CCW_ROTATE, INPUT_PULLUP);
-    pinMode(PIN_CW_ROTATE, INPUT_PULLUP);
-    initStage();
-    printMap();
-    currentColor[0] = choiseRandColor();
-    currentColor[1] = choiseRandColor();
-    nextColor[0] = choiseRandColor();
-    nextColor[1] = choiseRandColor();
 }
 
 void funcCheckEvaporation(uint8_t *y, uint8_t *x)
@@ -487,6 +479,165 @@ void funcCheckEvaporation(uint8_t *y, uint8_t *x)
         }
     }
 }
+void buttonLeft()
+{
+    printPuyo(player_x, player_y, BLACK);
+    printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
+
+    rotate(LEFT);
+    printPuyo(player_x, player_y, colors[nextColor[0]]);
+    printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+
+    while (digitalRead(PIN_CCW_ROTATE) == LOW)
+    {
+    }
+}
+
+void buttonRight()
+{
+    printPuyo(player_x, player_y, BLACK);
+    printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
+
+    rotate(RIGHT);
+    printPuyo(player_x, player_y, colors[nextColor[0]]);
+    printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
+
+    while (digitalRead(PIN_CW_ROTATE) == LOW)
+    {
+    }
+}
+void startMenue()
+{
+    Serial.println("Start menu");
+    m5.Lcd.fillScreen(BLACK);
+    m5.Lcd.setTextColor(GREEN);
+
+    bool print = false;
+    while (true)
+    {
+        bool start = false;
+        M5.Lcd.setCursor(60, 105);
+        if (print)
+            M5.Lcd.print(">START<");
+        else
+            m5.Lcd.fillScreen(BLACK);
+        print = !print;
+        M5.Lcd.drawTriangle(150, 200, 170, 200, 160, 215, GREEN);
+        m5.Lcd.setTextSize(5);
+        while (millis() - pre < 1000)
+        {
+            M5.update(); // ボタンを読み取る
+            if (M5.BtnB.wasReleased() || M5.BtnB.pressedFor(1000, 200))
+            {
+                start = true;
+            }
+        }
+        pre = millis();
+        if (start)
+        {
+            break;
+        }
+    }
+}
+
+void counter()
+{
+    if (counterState == WAITING)
+    {
+        uint8_t x = rand_i(0, PLAYAREA_MAP_SIZE_X);
+        for (uint8_t y = 0; y < PLAYAREA_MAP_SIZE_Y; y++)
+        {
+            if (0x01 <= playAreaMap[y][x] && playAreaMap[y][x] <= 0x05)
+            {
+                counter_y = alien_posi_y - BLOCKSIZE * ALIEN_IMG_SIZE_Y * (y - 1);
+                counterColor = colors[playAreaMap[y][x]];
+
+                break;
+            }
+            else if (0x10 <= playAreaMap[y][x] && playAreaMap[y][x] <= 0x50)
+            {
+                return;
+            }
+        }
+
+        counter_x = (x + 0.5) * PUYO_IMG_SIZE_X * BLOCKSIZE + X_OFFSET_PIXEL;
+        counterState = SHOOTING;
+    }
+    else if (counterState == SHOOTING)
+    {
+        M5.Lcd.fillCircle(counter_x, counter_y, 4, BLACK);
+        counter_y += 10;
+        M5.Lcd.fillCircle(counter_x, counter_y, 4, counterColor);
+        if (counter_y > player_y + ALIEN_IMG_SIZE_Y * BLOCKSIZE)
+        {
+            M5.Lcd.fillCircle(counter_x, counter_y, 4, BLACK);
+            counterState = END;
+        }
+    }
+    else if (counterState == END)
+    {
+        counterState = WAITING;
+    }
+}
+
+void gameover()
+{
+    uint8_t delayMs = 50;
+    for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
+    {
+        for (uint8_t j = 0; j < PLAYAREA_MAP_SIZE_X + 1; j++)
+        {
+            M5.Lcd.fillRect(j * BLOCKSIZE * ALIEN_IMG_SIZE_X, i * BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLOCKSIZE * ALIEN_IMG_SIZE_X, BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLACK);
+            delay(delayMs);
+            if (delayMs > 0)
+                delayMs--;
+        }
+    }
+    M5.Lcd.setTextSize(5);
+    M5.Lcd.setCursor(85, 0);
+    M5.Lcd.print("SCORE");
+    M5.Lcd.setCursor(85, 100);
+    M5.Lcd.print(score);
+    while (true)
+    {
+    }
+}
+
+void damage()
+{
+    if (player_y <= counter_y && counter_y < player_y + BLOCKSIZE * PUYO_IMG_SIZE_Y && unbeatable)
+    {
+        if (counter_x / BLOCKSIZE / PUYO_IMG_SIZE_X == player_x / BLOCKSIZE / PUYO_IMG_SIZE_X)
+        {
+            gameover();
+        }
+        else if (counter_x / BLOCKSIZE / PUYO_IMG_SIZE_X == player_x / BLOCKSIZE / PUYO_IMG_SIZE_X + puyoOffset[puyoDirection][0])
+        {
+            gameover();
+        }
+    }
+}
+
+void setup()
+{
+    Serial.begin(115200); // 115200bps
+
+    M5.begin(true, false, true);
+    M5.Power.begin();
+    initRand();
+    M5.Lcd.setCursor(100, 100);
+    pinMode(PIN_CCW_ROTATE, INPUT_PULLUP);
+    pinMode(PIN_CW_ROTATE, INPUT_PULLUP);
+    initStage();
+    printMap();
+    for (uint8_t i = 0; i < 2; i++)
+    {
+        currentColor[i] = choiseRandColor();
+        nextColor[i] = choiseRandColor();
+    }
+    startMenue();
+}
+
 void loop()
 {
     if (micros() - pre > STEP_PERIOD * 1000)
@@ -496,8 +647,13 @@ void loop()
         {
             clearAlian();
             printMap();
+            // Debug
+            printf("counterColor %d\n", counterColor);
+            printf("counter_y %d\n", counter_y);
+            printf("counter_x %d\n", counter_x / BLOCKSIZE / ALIEN_IMG_SIZE_X);
         }
         shot();
+
         if (isShooting[0] == END && isShooting[1] == END)
         {
             isShooting[0] = WAITING;
@@ -505,6 +661,11 @@ void loop()
             puyoDirection = 0;
         }
         funcCheckEvaporation(&check_y, &check_x);
+
+        if ((counterLcdRefresh) % 20 == 0)
+        {
+            counter();
+        }
     }
 
     if (isShooting[0] == WAITING && isShooting[1] == WAITING)
@@ -512,6 +673,8 @@ void loop()
         printPuyo(player_x, player_y, colors[nextColor[0]]);
         printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
     }
+
+    damage();
 
     M5.update(); // ボタンを読み取る
     // Button define
@@ -542,28 +705,11 @@ void loop()
 
     if (digitalRead(PIN_CCW_ROTATE) == LOW)
     {
-        printPuyo(player_x, player_y, BLACK);
-        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
-
-        rotate(LEFT);
-        printPuyo(player_x, player_y, colors[nextColor[0]]);
-        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
-
-        while (digitalRead(PIN_CCW_ROTATE) == LOW)
-        {
-        }
+        buttonLeft();
     }
+
     if (digitalRead(PIN_CW_ROTATE) == LOW)
     {
-        printPuyo(player_x, player_y, BLACK);
-        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, BLACK);
-
-        rotate(RIGHT);
-        printPuyo(player_x, player_y, colors[nextColor[0]]);
-        printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
-
-        while (digitalRead(PIN_CW_ROTATE) == LOW)
-        {
-        }
+        buttonRight();
     }
 }
