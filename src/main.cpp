@@ -24,7 +24,17 @@ int32_t player_y = 216;
 uint8_t puyoDirection = 0;
 int8_t puyoOffset[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}; // x,y
 int32_t shot_posi_y = player_y;
-int8_t isShooting[2] = {0};
+
+enum state
+{
+    WAITING = 0,
+    SHOOTING,
+    PRINTMAP,
+    CHECKERASE,
+    END
+};
+bool subState[2] = {false, false};
+int8_t isShooting = WAITING;
 uint16_t currentColor[2];
 uint16_t nextColor[2];
 uint8_t check_y = 0;
@@ -35,14 +45,6 @@ uint8_t counter_y;
 uint8_t counter_x;
 uint32_t counterColor;
 
-enum state
-{
-    WAITING = 0,
-    SHOOTING,
-    PRINTMAP,
-    CHECKERASE,
-    END
-};
 uint8_t counterState = WAITING;
 
 char alienImg[8][11] = {{0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0},
@@ -371,7 +373,7 @@ void rotate(int8_t direction)
 
 void shot()
 {
-    if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+    if (isShooting == WAITING)
     {
         // shotを打ち終わった瞬間までは無敵（プレイヤーにとって制御不能なため）
         unbeatable = true;
@@ -386,27 +388,39 @@ void shot()
     {
         if (puyoDirection % 2 == 0) // 横向き
         {
-            if (playAreaMap[y][x] != BLANK && isShooting[1] == SHOOTING && y - 1 >= 0) // Blankでないとき
+            if (playAreaMap[y][x] != BLANK && y - 1 >= 0) // Blankでないとき
             {
-                isShooting[1] = PRINTMAP;
-                playAreaMap[y - 1][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
-                puyo_xy[0][0] = y - 1;
-                puyo_xy[0][1] = x;
+                if (isShooting == SHOOTING && subState[0] == false)
+                {
+                    subState[0] = true;
+
+                    playAreaMap[y - 1][x] = currentColor[0] << PUYO_COLOR_OFFSET; // puyoを置く
+                    puyo_xy[0][0] = y - 1;
+                    puyo_xy[0][1] = x;
+                }
             }
-            if (playAreaMap[y + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] != BLANK && isShooting[0] == SHOOTING && y - 1 >= 0)
+            if (playAreaMap[y + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] != BLANK && y - 1 >= 0)
             {
-                isShooting[0] = PRINTMAP;
-                playAreaMap[y - 1 + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
-                puyo_xy[1][0] = y - 1;
-                puyo_xy[1][1] = x + puyoOffset[puyoDirection][0];
+                if (isShooting == SHOOTING && subState[1] == false)
+                {
+                    subState[1] = true;
+
+                    playAreaMap[y - 1 + puyoOffset[puyoDirection][1]][x + puyoOffset[puyoDirection][0]] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
+                    puyo_xy[1][0] = y - 1;
+                    puyo_xy[1][1] = x + puyoOffset[puyoDirection][0];
+                }
+            }
+            if (subState[0] && subState[1])
+            {
+                isShooting = PRINTMAP;
             }
         }
         else // 縦向き
         {
-            if (playAreaMap[y][x] != BLANK && isShooting[1] == SHOOTING && y - 1 >= 0) // Blankでないとき
+            if (playAreaMap[y][x] != BLANK && isShooting == SHOOTING && y - 1 >= 0) // Blankでないとき
             {
-                isShooting[0] = PRINTMAP;
-                isShooting[1] = PRINTMAP;
+                isShooting = PRINTMAP;
+
                 if (puyoDirection == 3)
                 {
                     playAreaMap[y - 1][x] = currentColor[1] << PUYO_COLOR_OFFSET; // puyoを置く
@@ -426,22 +440,22 @@ void shot()
         }
     }
 
-    if (isShooting[0] == PRINTMAP && isShooting[1] == PRINTMAP)
+    if (isShooting == PRINTMAP)
     {
-        isShooting[0] = CHECKERASE;
-        isShooting[1] = CHECKERASE;
+        isShooting = CHECKERASE;
+
         clearAlian();
         printMap();
     }
-    if (isShooting[0] == CHECKERASE && isShooting[1] == CHECKERASE)
+    if (isShooting == CHECKERASE)
     {
         checkCanErase(puyo_xy[0][0], puyo_xy[0][1], currentColor[0]);
         checkCanErase(puyo_xy[1][0], puyo_xy[1][1], currentColor[1]);
 
-        isShooting[0] = END;
-        isShooting[1] = END;
+        isShooting = END;
+        for (uint8_t i = 0; i < 2; i++)
+            subState[i] = false;
         unbeatable = true;
-        //        rotate(RIGHT);
     }
 
     printPuyo(player_x, shot_posi_y, BLACK);
@@ -451,8 +465,7 @@ void shot()
     // printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, shot_posi_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[currentColor[1]]);
     if (shot_posi_y < 0)
     {
-        isShooting[0] = WAITING;
-        isShooting[1] = WAITING;
+        isShooting = WAITING;
         shot_posi_y = player_y;
     }
 }
@@ -654,21 +667,21 @@ void loop()
         }
         shot();
 
-        if (isShooting[0] == END && isShooting[1] == END)
+        if (isShooting == END)
         {
-            isShooting[0] = WAITING;
-            isShooting[1] = WAITING;
+            isShooting = WAITING;
+
             puyoDirection = 0;
         }
         funcCheckEvaporation(&check_y, &check_x);
 
-        if ((counterLcdRefresh) % 20 == 0)
+        if (counterLcdRefresh % 20 == 0)
         {
             counter();
         }
     }
 
-    if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+    if (isShooting == WAITING)
     {
         printPuyo(player_x, player_y, colors[nextColor[0]]);
         printPuyo(player_x + puyoOffset[puyoDirection][0] * PUYO_IMG_SIZE_X * BLOCKSIZE, player_y + puyoOffset[puyoDirection][1] * PUYO_IMG_SIZE_Y * BLOCKSIZE, colors[nextColor[1]]);
@@ -685,10 +698,9 @@ void loop()
 
     if (M5.BtnB.wasReleased() || M5.BtnB.pressedFor(1000, 200))
     {
-        if (isShooting[0] == WAITING && isShooting[1] == WAITING)
+        if (isShooting == WAITING)
         {
-            isShooting[0] = SHOOTING;
-            isShooting[1] = SHOOTING;
+            isShooting = SHOOTING;
 
             for (uint8_t i = 0; i < 2; i++)
             {
