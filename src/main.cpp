@@ -15,6 +15,8 @@
 #define X_OFFSET_PIXEL 12
 #define THRESH 4
 #define EVAPORATION_THRESH 8
+#define ALIEN 0
+#define PUYO 1
 // #define printf(...)
 
 uint32_t pre = 0;
@@ -42,7 +44,7 @@ uint8_t check_x = 0;
 bool unbeatable = false;
 uint16_t score = 0;
 uint8_t counter_y;
-uint8_t counter_x;
+uint16_t counter_x;
 uint32_t counterColor;
 
 uint8_t counterState = WAITING;
@@ -79,8 +81,11 @@ uint32_t colors[] = {
     //  RED
 };
 
-uint8_t playAreaMap[11][9] = {
+uint8_t playAreaMap[14][9] = {
     // 0x01 ~ 0x05:Alien  0x10 ~ x50:Puyo  0x08:Initial  0x09:Blank
+    {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-7
+    {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-6
+    {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-5
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-4
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-3
     {9, 9, 9, 9, 9, 9, 9, 9, 9},  //-2
@@ -95,7 +100,7 @@ uint8_t playAreaMap[11][9] = {
 const uint8_t PLAYAREA_MAP_SIZE_X = sizeof(playAreaMap[0]) / sizeof(playAreaMap[0][0]);
 const uint8_t PLAYAREA_MAP_SIZE_Y = sizeof(playAreaMap) / sizeof(playAreaMap[0]);
 
-uint32_t alien_posi_y = BLOCKSIZE * ALIEN_IMG_SIZE_Y * 6;
+uint32_t alien_posi_y = BLOCKSIZE * ALIEN_IMG_SIZE_Y * 8;
 
 bool isCheckeEvapo[PLAYAREA_MAP_SIZE_Y][PLAYAREA_MAP_SIZE_X] = {false};
 
@@ -154,6 +159,51 @@ void printPuyo(int32_t x, int32_t y, uint16_t color)
     }
 }
 
+void gameover()
+{
+    uint8_t delayMs = 50;
+    for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
+    {
+        for (uint8_t j = 0; j < PLAYAREA_MAP_SIZE_X + 1; j++)
+        {
+            M5.Lcd.fillRect(j * BLOCKSIZE * ALIEN_IMG_SIZE_X, i * BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLOCKSIZE * ALIEN_IMG_SIZE_X, BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLACK);
+            delay(delayMs);
+            if (delayMs > 0)
+                delayMs--;
+        }
+    }
+    M5.Lcd.setTextSize(5);
+    M5.Lcd.setTextColor(GREEN);
+    M5.Lcd.setCursor(85, 0);
+    M5.Lcd.print("SCORE");
+    M5.Lcd.setCursor(85, 100);
+    M5.Lcd.print(score);
+    while (true)
+    {
+    }
+}
+
+void blinkMap(int32_t x, int32_t y, uint8_t isAlien, uint32_t color)
+{
+    for (uint8_t i = 0; i < 2; i++)
+    {
+        if (isAlien == ALIEN)
+        {
+            printAlian(x, y, BLACK);
+            delay(300);
+            printAlian(x, y, color);
+            delay(300);
+        }
+        else if (isAlien == PUYO)
+        {
+            printPuyo(x, y, BLACK);
+            delay(300);
+            printPuyo(x, y, color);
+            delay(300);
+        }
+    }
+}
+
 void printMap()
 {
     int32_t x;
@@ -183,6 +233,11 @@ void printMap()
             case 5: // Reserved
             case 6: // Reserved
                 printAlian(x, offset_y, colors[playAreaMap[l][k]]);
+                if (offset_y > 200)
+                {
+                    blinkMap(x, offset_y, ALIEN, colors[playAreaMap[l][k]]);
+                    gameover();
+                }
                 break;
 
             case 0x10:
@@ -192,6 +247,11 @@ void printMap()
             case 0x50: // Reserved
             case 0x60: // Reserved
                 printPuyo(x, offset_y, colors[playAreaMap[l][k] >> PUYO_COLOR_OFFSET]);
+                if (offset_y > 200)
+                {
+                    blinkMap(x, offset_y, PUYO, colors[playAreaMap[l][k] >> PUYO_COLOR_OFFSET]);
+                    gameover();
+                }
                 break;
 
             default:
@@ -204,7 +264,7 @@ void printMap()
 void initStage()
 {
     M5.Lcd.setTextSize(3);
-    m5.Lcd.clear();
+    M5.Lcd.clear();
 }
 void clearAlian()
 {
@@ -283,7 +343,14 @@ void checkCanErase(uint8_t y, uint8_t x, uint8_t color)
                 }
             }
         }
-        score += pow(2, count);
+        uint16_t s = pow(2, count);
+        score += s;
+        M5.Lcd.setTextSize(4);
+        M5.Lcd.setCursor(235, 10);
+        M5.Lcd.fillRect(230, 10, 80, 30, BLACK);
+        M5.Lcd.setTextColor(GREEN);
+        M5.Lcd.print(s);
+        printf("Score= %d\n", s);
     }
 }
 
@@ -522,8 +589,8 @@ void buttonRight()
 void startMenue()
 {
     Serial.println("Start menu");
-    m5.Lcd.fillScreen(BLACK);
-    m5.Lcd.setTextColor(GREEN);
+    M5.Lcd.fillScreen(BLACK);
+    M5.Lcd.setTextColor(GREEN);
 
     bool print = false;
     while (true)
@@ -533,10 +600,10 @@ void startMenue()
         if (print)
             M5.Lcd.print(">START<");
         else
-            m5.Lcd.fillScreen(BLACK);
+            M5.Lcd.fillScreen(BLACK);
         print = !print;
         M5.Lcd.drawTriangle(150, 200, 170, 200, 160, 215, GREEN);
-        m5.Lcd.setTextSize(5);
+        M5.Lcd.setTextSize(5);
         while (millis() - pre < 1000)
         {
             M5.update(); // ボタンを読み取る
@@ -558,6 +625,7 @@ void counter()
     if (counterState == WAITING)
     {
         uint8_t x = rand_i(0, PLAYAREA_MAP_SIZE_X);
+
         for (uint8_t y = 0; y < PLAYAREA_MAP_SIZE_Y; y++)
         {
             if (0x01 <= playAreaMap[y][x] && playAreaMap[y][x] <= 0x05)
@@ -593,39 +661,18 @@ void counter()
     }
 }
 
-void gameover()
-{
-    uint8_t delayMs = 50;
-    for (uint8_t i = 0; i < PLAYAREA_MAP_SIZE_Y; i++)
-    {
-        for (uint8_t j = 0; j < PLAYAREA_MAP_SIZE_X + 1; j++)
-        {
-            M5.Lcd.fillRect(j * BLOCKSIZE * ALIEN_IMG_SIZE_X, i * BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLOCKSIZE * ALIEN_IMG_SIZE_X, BLOCKSIZE * ALIEN_IMG_SIZE_Y, BLACK);
-            delay(delayMs);
-            if (delayMs > 0)
-                delayMs--;
-        }
-    }
-    M5.Lcd.setTextSize(5);
-    M5.Lcd.setCursor(85, 0);
-    M5.Lcd.print("SCORE");
-    M5.Lcd.setCursor(85, 100);
-    M5.Lcd.print(score);
-    while (true)
-    {
-    }
-}
-
 void damage()
 {
     if (player_y <= counter_y && counter_y < player_y + BLOCKSIZE * PUYO_IMG_SIZE_Y && unbeatable)
     {
         if (counter_x / BLOCKSIZE / PUYO_IMG_SIZE_X == player_x / BLOCKSIZE / PUYO_IMG_SIZE_X)
         {
+            blinkMap(player_x, player_y, PUYO, colors[nextColor[0]]);
             gameover();
         }
         else if (counter_x / BLOCKSIZE / PUYO_IMG_SIZE_X == player_x / BLOCKSIZE / PUYO_IMG_SIZE_X + puyoOffset[puyoDirection][0])
         {
+            blinkMap(player_x + BLOCKSIZE * PUYO_IMG_SIZE_X, player_y, PUYO, colors[nextColor[1]]);
             gameover();
         }
     }
@@ -656,14 +703,10 @@ void loop()
     if (micros() - pre > STEP_PERIOD * 1000)
     {
         pre = micros();
-        if ((counterLcdRefresh++) % 300 == 0)
+        if ((counterLcdRefresh++) % 200 == 0)
         {
             clearAlian();
             printMap();
-            // Debug
-            printf("counterColor %d\n", counterColor);
-            printf("counter_y %d\n", counter_y);
-            printf("counter_x %d\n", counter_x / BLOCKSIZE / ALIEN_IMG_SIZE_X);
         }
         shot();
 
