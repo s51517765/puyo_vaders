@@ -1,7 +1,9 @@
-// 230 x 315 画面サイズ
 #include <Arduino.h>
 #include <M5Stack.h> //0.3.9
 #include <stdbool.h>
+// 230 x 315 画面サイズ
+#define LCD_SIZE_Y 230
+#define LCD_SIZE_X 321
 #define BLOCKSIZE 3
 #define STEP_PERIOD 10 // 画面更新周期
 #define ALIEN_SPEED 2
@@ -265,6 +267,22 @@ void initStage()
 {
     M5.Lcd.setTextSize(3);
     M5.Lcd.clear();
+    bool b = false;
+    uint8_t y = 0;
+    for (uint8_t i = 0; y < LCD_SIZE_Y; i++, y += X_OFFSET_PIXEL)
+    {
+        if (b)
+        {
+            M5.Lcd.fillRect(0, y, X_OFFSET_PIXEL, X_OFFSET_PIXEL, YELLOW);
+            M5.Lcd.fillRect(LCD_SIZE_X - X_OFFSET_PIXEL, y, X_OFFSET_PIXEL, X_OFFSET_PIXEL, YELLOW);
+        }
+        else
+        {
+            M5.Lcd.fillRect(0, y, X_OFFSET_PIXEL, X_OFFSET_PIXEL, ORANGE);
+            M5.Lcd.fillRect(LCD_SIZE_X - X_OFFSET_PIXEL, y, X_OFFSET_PIXEL, X_OFFSET_PIXEL, ORANGE);
+        }
+        b = !b;
+    }
 }
 void clearAlian()
 {
@@ -688,6 +706,7 @@ void setup()
     M5.Lcd.setCursor(100, 100);
     pinMode(PIN_CCW_ROTATE, INPUT_PULLUP);
     pinMode(PIN_CW_ROTATE, INPUT_PULLUP);
+    startMenue();
     initStage();
     printMap();
     for (uint8_t i = 0; i < 2; i++)
@@ -695,7 +714,6 @@ void setup()
         currentColor[i] = choiseRandColor();
         nextColor[i] = choiseRandColor();
     }
-    startMenue();
 }
 
 void loop()
